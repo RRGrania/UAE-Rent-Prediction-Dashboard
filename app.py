@@ -7,7 +7,7 @@ import dash
 from dash import dcc, html, Input, Output, State
 import dash_bootstrap_components as dbc
 import plotly.graph_objects as go
-import pandas as pd
+import pandas as pd # Added for map plot data handling
 
 # Setup logging
 logging.basicConfig(level=logging.INFO)
@@ -81,6 +81,23 @@ category_mappings = {
 }
 
 # -----------------------
+# Geographical data for UAE cities (for map plot)
+# Note: These are approximate coordinates. Replace with your specific data if needed.
+# The 'predicted_rent' values are synthetic for demonstration purposes only.
+# -----------------------
+city_coordinates = {
+    "Abu Dhabi": {"lat": 24.4667, "lon": 54.3667, "predicted_rent": 85000},
+    "Dubai": {"lat": 25.2048, "lon": 55.2708, "predicted_rent": 120000},
+    "Sharjah": {"lat": 25.3575, "lon": 55.3908, "predicted_rent": 50000},
+    "Ajman": {"lat": 25.4136, "lon": 55.4456, "predicted_rent": 40000},
+    "Al Ain": {"lat": 24.2075, "lon": 55.7447, "predicted_rent": 70000},
+    "Ras Al Khaimah": {"lat": 25.7667, "lon": 55.9500, "predicted_rent": 60000},
+    "Fujairah": {"lat": 25.1222, "lon": 56.3344, "predicted_rent": 45000},
+    "Umm Al Quwain": {"lat": 25.5533, "lon": 55.5475, "predicted_rent": 35000},
+}
+
+
+# -----------------------
 # Helper functions to create input cards
 # -----------------------
 def create_input_card(name, config):
@@ -92,7 +109,6 @@ def create_input_card(name, config):
             html.Label(name, className="form-label mb-2 fw-bold"),
             dbc.InputGroup(
                 [
-                    # Corrected: Use html.I with className for Font Awesome icons
                     dbc.InputGroupText(html.I(className=config["icon"])),
                     dbc.Input(
                         id=name,
@@ -120,7 +136,6 @@ def create_dropdown_card(name, options_dict, default_idx, icon):
             html.Label(name, className="form-label mb-2 fw-bold"),
             dbc.InputGroup(
                 [
-                    # Corrected: Use html.I with className for Font Awesome icons
                     dbc.InputGroupText(html.I(className=icon)),
                     dcc.Dropdown(
                         id=name,
@@ -162,7 +177,6 @@ def build_layout():
             dbc.NavItem(dbc.NavLink("Predict", href="#prediction-section")),
             dbc.NavItem(dbc.NavLink("Data Insights", href="#data-insights-section")),
             dbc.Button(
-                # Corrected: Use html.I with className for Font Awesome icons
                 html.I(className="fa-solid fa-bars"), # Hamburger icon for offcanvas toggle
                 id="open-offcanvas",
                 n_clicks=0,
@@ -238,7 +252,6 @@ def build_layout():
                                         dbc.Col(
                                             [
                                                 dbc.Button(
-                                                    # Corrected: Use html.I with className for Font Awesome icons
                                                     [html.I(className="fa-solid fa-magnifying-glass me-2"), "Get Prediction"],
                                                     id="predict-btn",
                                                     color="primary",
@@ -313,7 +326,7 @@ def build_layout():
                                             ),
                                             md=6
                                         ),
-                                         dbc.Col(
+                                        dbc.Col(
                                             dbc.Card(
                                                 dbc.CardBody([
                                                     html.H5("Rent Distribution by Property Type", className="card-title"),
@@ -348,6 +361,22 @@ def build_layout():
                                                 className="shadow-sm rounded-lg border-0"
                                             ),
                                             md=6
+                                        )
+                                    ]
+                                ),
+                                # New Row for Map Plot
+                                dbc.Row(
+                                    className="g-4 mt-4",
+                                    children=[
+                                        dbc.Col(
+                                            dbc.Card(
+                                                dbc.CardBody([
+                                                    html.H5("Rent Distribution Map (Sample Data)", className="card-title"),
+                                                    dcc.Graph(id="rent-map-plot", style={"height": "500px"}) # Added map plot
+                                                ]),
+                                                className="shadow-sm rounded-lg border-0"
+                                            ),
+                                            width=12 # Map plot takes full width
                                         )
                                     ]
                                 )
@@ -394,6 +423,10 @@ def preprocess_inputs(values):
     
     numeric_vals = np.array([values[0], values[1], area_sqft]).reshape(1, -1)
     cat_vals = np.array(values[3:]).reshape(1, -1)
+
+    # Check if scaler and ohe are loaded
+    if scaler is None or ohe is None:
+        raise ValueError("Scaler or OneHotEncoder not loaded for preprocessing.")
 
     scaled_num = scaler.transform(numeric_vals)
     encoded_cat = ohe.transform(cat_vals)
@@ -536,7 +569,6 @@ def update_rent_by_type_violin_plot(pathname):
                 name=type_label,
                 box_visible=True,
                 meanline_visible=True,
-                # points='all', # Show all points for small datasets
                 jitter=0.05,
                 scalemode='count' # violin width proportional to the number of points in that violin
             )
@@ -624,6 +656,45 @@ def update_baths_rent_scatter_plot(pathname):
     )
     return fig
 
+# New Callback for Rent Map Plot
+@dash_app.callback(
+    Output('rent-map-plot', 'figure'),
+    Input('url', 'pathname') # Trigger on page load
+)
+def update_rent_map_plot(pathname):
+    # Prepare data for the map plot
+    cities = list(city_coordinates.keys())
+    lats = [city_coordinates[city]["lat"] for city in cities]
+    lons = [city_coordinates[city]["lon"] for city in cities]
+    rents = [city_coordinates[city]["predicted_rent"] for city in cities]
+
+    fig = go.Figure(
+        go.Scattermapbox(
+            lat=lats,
+            lon=lons,
+            mode="markers",
+            marker=go.scattermapbox.Marker(
+                size=[r / 5000 for r in rents], # Scale marker size by rent for visibility
+                color=rents,
+                colorscale="Viridis",
+                showscale=True,
+                colorbar=dict(title="Annual Rent (AED)"),
+                opacity=0.8
+            ),
+            text=[f"City: {city}<br>Estimated Rent: AED {rent:,.2f}" for city, rent in zip(cities, rents)],
+            hoverinfo="text",
+        )
+    )
+
+    fig.update_layout(
+        mapbox_style="open-street-map", # You can try other styles like "carto-positron", "stamen-terrain"
+        mapbox_zoom=6,
+        mapbox_center={"lat": 24.5, "lon": 55.0}, # Centered around UAE
+        margin={"r":0,"t":40,"l":0,"b":0},
+        title_text="Annual Rent Distribution Across UAE Cities (Sample Data)",
+    )
+    return fig
+
 
 # -----------------------
 # Flask API endpoint for prediction
@@ -634,11 +705,21 @@ def predict_api():
         return jsonify({"error": "Model or preprocessors not loaded"}), 503
     try:
         data = request.json
-        features = [data.get(k) for k in feature_config.keys()]
-        if any(v is None for v in features):
+        # The API expects raw feature values, then preprocess_inputs handles them
+        # Convert map values back to original feature names for preprocessing
+        feature_values = [
+            data.get("Beds"),
+            data.get("Baths"),
+            data.get("Area in square meters"),
+            data.get("Type"), # This will be the numeric index
+            data.get("Furnishing"), # This will be the numeric index
+            data.get("City") # This will be the numeric index
+        ]
+
+        if any(v is None for v in feature_values):
             return jsonify({"error": "Missing one or more required features"}), 400
         
-        X = preprocess_inputs(features)
+        X = preprocess_inputs(feature_values)
         pred_log = model.predict(X)[0]
         pred = np.expm1(pred_log)
         return jsonify({"predicted_rent": float(pred)})
@@ -675,8 +756,7 @@ if __name__ == "__main__":
     if not os.path.exists("src/scaler.pkl"):
         logger.warning("Scaler file 'src/scaler.pkl' not found.")
     if not os.path.exists("src/encoder.pkl"):
-        logger.warning("Encoder file 'src/encoder.pkl' not found.")
-
+        logger.warning("Encoder file 'src/encoder_new.pkl' not found.") # Corrected filename
+    
     logger.info("Starting Flask + Dash Rent Prediction App...")
     server.run(host="0.0.0.0", port=8000, debug=True)
-
