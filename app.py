@@ -7,7 +7,8 @@ import dash
 from dash import dcc, html, Input, Output, State
 import dash_bootstrap_components as dbc
 import plotly.graph_objects as go
-import pandas as pd # Added for map plot data handling
+import pandas as pd
+import plotly.express as px # Import Plotly Express for easier qualitative plots
 
 # Setup logging
 logging.basicConfig(level=logging.INFO)
@@ -45,8 +46,9 @@ dash_app = dash.Dash(
     __name__,
     server=server,
     url_base_pathname="/dash/",
-    external_stylesheets=[dbc.themes.CERULEAN, dbc.icons.FONT_AWESOME], # Changed theme to CERULEAN
-    assets_folder="assets",
+    # Changed theme to CERULEAN and added Font Awesome for icons
+    external_stylesheets=[dbc.themes.CERULEAN, dbc.icons.FONT_AWESOME],
+    # No 'assets_folder' needed if we aren't using custom CSS files or static assets directly for now
     meta_tags=[{"name": "viewport", "content": "width=device-width, initial-scale=1.0"}] # Responsive meta tag
 )
 
@@ -166,7 +168,7 @@ def build_layout():
             prediction_inputs.append(create_dropdown_card(name, category_mappings[name], cfg["default"], cfg["icon"]))
         else:
             prediction_inputs.append(create_input_card(name, cfg))
-    
+
     col1_inputs = prediction_inputs[0::2]
     col2_inputs = prediction_inputs[1::2]
 
@@ -226,7 +228,7 @@ def build_layout():
             dcc.Location(id="url", refresh=False),
             navbar, # Add the navbar
             offcanvas, # Add the offcanvas sidebar
-            
+
             # Main content area - using a container with top margin for navbar
             dbc.Container(
                 className="py-5 mt-5", # Margin-top to clear the fixed navbar
@@ -237,7 +239,7 @@ def build_layout():
                         [
                             dbc.CardHeader(html.H2("Predict Annual Rent", className="text-center text-primary mb-0")),
                             dbc.CardBody([
-                                html.P("Enter the property details to get an estimated annual rent in AED.", 
+                                html.P("Enter the property details to get an estimated annual rent in AED.",
                                        className="text-center text-muted mb-4"),
                                 dbc.Row(
                                     className="g-4",
@@ -371,7 +373,7 @@ def build_layout():
                                         dbc.Col(
                                             dbc.Card(
                                                 dbc.CardBody([
-                                                    html.H5("Rent Distribution Map (Sample Data)", className="card-title"),
+                                                    html.H5("Annual Rent Across UAE Cities (Sample Data)", className="card-title"),
                                                     dcc.Graph(id="rent-map-plot", style={"height": "500px"}) # Added map plot
                                                 ]),
                                                 className="shadow-sm rounded-lg border-0"
@@ -416,11 +418,11 @@ def preprocess_inputs(values):
     Preprocesses the input values from the Dash form for model prediction.
     Assumes values order: Beds, Baths, Area_in_sqm, Type, Furnishing, City.
     Converts Area from square meters to square feet.
-    Applies scaling to numeric features and one-hot encoding to categorical features.
+    Splits, scales numeric, and one-hot encodes categorical features.
     """
     area_sqm = values[2]
     area_sqft = area_sqm * 10.7639
-    
+
     numeric_vals = np.array([values[0], values[1], area_sqft]).reshape(1, -1)
     cat_vals = np.array(values[3:]).reshape(1, -1)
 
@@ -449,10 +451,10 @@ def make_prediction(n_clicks, *values):
     """
     if not n_clicks:
         return "Click 'Get Prediction' to get an estimate."
-    
+
     if any(v is None for v in values):
         return dbc.Alert("Please fill in all fields to get a prediction.", color="warning", className="mt-3")
-    
+
     if model is None or scaler is None or ohe is None:
         return dbc.Alert("Prediction model is not loaded. Please check server logs and ensure model files are in 'src' directory.", color="danger", className="mt-3")
 
@@ -472,6 +474,22 @@ def make_prediction(n_clicks, *values):
 # Callbacks for Data Visualization Plots
 # -----------------------
 
+# Function to get colors from the chosen Bootstrap theme (CERULEAN)
+# Note: This is a simplified way to access colors. For a full list,
+# you'd inspect the actual CSS variables of the theme.
+# Common colors: 'primary', 'secondary', 'info', 'success', 'warning', 'danger', 'light', 'dark'
+BOOTSTRAP_COLORS = {
+    'primary': '#007bff', # Example for Cerulean Blue
+    'secondary': '#6c757d', # Example Grey
+    'info': '#17a2b8', # Example Cyan
+    'success': '#28a745', # Example Green
+    'warning': '#ffc107', # Example Yellow
+    'danger': '#dc3545', # Example Red
+    'light': '#f8f9fa',
+    'dark': '#343a40'
+}
+
+
 # Callback for Area Distribution Plot
 @dash_app.callback(
     Output('area-distribution-plot', 'figure'),
@@ -479,17 +497,22 @@ def make_prediction(n_clicks, *values):
 )
 def update_area_distribution_plot(pathname):
     np.random.seed(42)
-    areas = np.random.normal(loc=150, scale=50, size=500) # Slightly larger range for areas
+    areas = np.random.normal(loc=150, scale=50, size=500)
     areas = areas[areas > 10].round(0)
 
-    fig = go.Figure(data=[go.Histogram(x=areas, nbinsx=30, marker_color='#636EFA', opacity=0.8)])
+    fig = go.Figure(data=[go.Histogram(x=areas, nbinsx=30, marker_color=BOOTSTRAP_COLORS['primary'], opacity=0.8)])
     fig.update_layout(
         title_text='Distribution of Area in Square Meters',
         xaxis_title_text='Area (sqm)',
         yaxis_title_text='Count',
         bargap=0.05,
-        template="plotly_white",
-        margin=dict(l=40, r=20, t=40, b=20)
+        template="plotly_white", # Clean white background
+        margin=dict(l=40, r=20, t=40, b=20),
+        # Add smooth transition for updates
+        transition=dict(duration=500, easing="cubic-in-out"),
+        plot_bgcolor='rgba(0,0,0,0)', # Transparent plot background
+        paper_bgcolor='rgba(0,0,0,0)', # Transparent paper background
+        font=dict(color=BOOTSTRAP_COLORS['dark']) # Text color from theme
     )
     return fig
 
@@ -500,20 +523,29 @@ def update_area_distribution_plot(pathname):
 )
 def update_type_distribution_plot(pathname):
     np.random.seed(42)
-    types_numeric = np.random.choice(list(category_mappings["Type"].keys()), size=300, 
+    types_numeric = np.random.choice(list(category_mappings["Type"].keys()), size=300,
                                      p=[0.4, 0.1, 0.2, 0.1, 0.05, 0.05, 0.05, 0.025, 0.025])
     type_labels = [category_mappings["Type"][t] for t in types_numeric]
-    type_df = pd.DataFrame(type_labels, columns=['Type'])
-    type_counts = type_df['Type'].value_counts().sort_values(ascending=False)
+    type_df = pd.DataFrame({'Type': type_labels}) # Create DataFrame for Plotly Express
+    type_counts = type_df['Type'].value_counts().reset_index()
+    type_counts.columns = ['Type', 'Count']
 
-    fig = go.Figure(data=[go.Bar(x=type_counts.index, y=type_counts.values, marker_color='#EF553B')])
+    # Use Plotly Express for a cleaner bar chart with automatic qualitative colors
+    fig = px.bar(type_counts, x='Type', y='Count',
+                 color='Type', # Color by type for distinct bars
+                 color_discrete_sequence=px.colors.qualitative.Plotly # A good default qualitative palette
+                )
     fig.update_layout(
         title_text='Distribution of Property Types',
         xaxis_title_text='Property Type',
         yaxis_title_text='Count',
         template="plotly_white",
         margin=dict(l=40, r=20, t=40, b=20),
-        xaxis={'categoryorder':'total descending'} # Order bars by count
+        xaxis={'categoryorder':'total descending'}, # Order bars by count
+        transition=dict(duration=500, easing="cubic-in-out"),
+        plot_bgcolor='rgba(0,0,0,0)',
+        paper_bgcolor='rgba(0,0,0,0)',
+        font=dict(color=BOOTSTRAP_COLORS['dark'])
     )
     return fig
 
@@ -524,20 +556,28 @@ def update_type_distribution_plot(pathname):
 )
 def update_city_distribution_plot(pathname):
     np.random.seed(42)
-    cities_numeric = np.random.choice(list(category_mappings["City"].keys()), size=400, 
-                                      p=[0.3, 0.1, 0.05, 0.35, 0.05, 0.05, 0.05, 0.05])
+    cities_numeric = np.random.choice(list(category_mappings["City"].keys()), size=400,
+                                     p=[0.3, 0.1, 0.05, 0.35, 0.05, 0.05, 0.05, 0.05])
     city_labels = [category_mappings["City"][c] for c in cities_numeric]
-    city_df = pd.DataFrame(city_labels, columns=['City'])
-    city_counts = city_df['City'].value_counts().sort_values(ascending=False)
+    city_df = pd.DataFrame({'City': city_labels})
+    city_counts = city_df['City'].value_counts().reset_index()
+    city_counts.columns = ['City', 'Count']
 
-    fig = go.Figure(data=[go.Bar(x=city_counts.index, y=city_counts.values, marker_color='#00CC96')])
+    fig = px.bar(city_counts, x='City', y='Count',
+                 color='City', # Color by city for distinct bars
+                 color_discrete_sequence=px.colors.qualitative.Pastel # Another nice qualitative palette
+                )
     fig.update_layout(
         title_text='Distribution of Cities',
         xaxis_title_text='City',
         yaxis_title_text='Count',
         template="plotly_white",
         margin=dict(l=40, r=20, t=40, b=20),
-        xaxis={'categoryorder':'total descending'}
+        xaxis={'categoryorder':'total descending'},
+        transition=dict(duration=500, easing="cubic-in-out"),
+        plot_bgcolor='rgba(0,0,0,0)',
+        paper_bgcolor='rgba(0,0,0,0)',
+        font=dict(color=BOOTSTRAP_COLORS['dark'])
     )
     return fig
 
@@ -550,7 +590,12 @@ def update_rent_by_type_violin_plot(pathname):
     np.random.seed(42)
     # Generate synthetic data mimicking different rent distributions for property types
     data_for_violin = []
-    for type_idx, type_label in category_mappings["Type"].items():
+    
+    # Define a color sequence for the violin plots to match the theme or be distinct
+    # Using a subset of Plotly's default qualitative colors or a custom list
+    violin_colors = px.colors.qualitative.D3 # A different qualitative palette
+
+    for i, (type_idx, type_label) in enumerate(category_mappings["Type"].items()):
         # Simulate different rent ranges for different types
         if type_label == "Apartment":
             rent = np.random.normal(loc=100000, scale=30000, size=50)
@@ -560,7 +605,7 @@ def update_rent_by_type_violin_plot(pathname):
             rent = np.random.normal(loc=350000, scale=80000, size=15)
         else: # Other types
             rent = np.random.normal(loc=70000, scale=20000, size=10)
-        
+
         rent[rent < 10000] = 10000 # Ensure rent is positive
 
         data_for_violin.append(
@@ -570,7 +615,10 @@ def update_rent_by_type_violin_plot(pathname):
                 box_visible=True,
                 meanline_visible=True,
                 jitter=0.05,
-                scalemode='count' # violin width proportional to the number of points in that violin
+                scalemode='count', # violin width proportional to the number of points in that violin
+                line_color=violin_colors[i % len(violin_colors)], # Assign color from sequence
+                fillcolor=violin_colors[i % len(violin_colors)],
+                opacity=0.6
             )
         )
 
@@ -581,7 +629,11 @@ def update_rent_by_type_violin_plot(pathname):
         yaxis_title_text='Annual Rent (AED)',
         template="plotly_white",
         margin=dict(l=40, r=20, t=40, b=20),
-        showlegend=False
+        showlegend=False,
+        transition=dict(duration=500, easing="cubic-in-out"),
+        plot_bgcolor='rgba(0,0,0,0)',
+        paper_bgcolor='rgba(0,0,0,0)',
+        font=dict(color=BOOTSTRAP_COLORS['dark'])
     )
     return fig
 
@@ -596,16 +648,16 @@ def update_beds_rent_scatter_plot(pathname):
     beds = np.random.randint(1, 6, size=200) # 1 to 5 beds
     rent = 50000 + beds * 20000 + np.random.normal(0, 15000, size=200)
     rent[rent < 10000] = 10000
-    
+
     df_scatter = pd.DataFrame({'Beds': beds, 'Rent': rent})
 
     fig = go.Figure(data=[go.Scatter(
-        x=df_scatter['Beds'], 
-        y=df_scatter['Rent'], 
-        mode='markers', 
+        x=df_scatter['Beds'],
+        y=df_scatter['Rent'],
+        mode='markers',
         marker=dict(
-            color='#FF6692', 
-            size=8,
+            color=BOOTSTRAP_COLORS['info'], # Using an info color from Cerulean
+            size=10, # Slightly larger markers
             opacity=0.7,
             line=dict(width=1, color='DarkSlateGrey')
         ),
@@ -617,7 +669,11 @@ def update_beds_rent_scatter_plot(pathname):
         xaxis_title_text='Number of Beds',
         yaxis_title_text='Annual Rent (AED)',
         template="plotly_white",
-        margin=dict(l=40, r=20, t=40, b=20)
+        margin=dict(l=40, r=20, t=40, b=20),
+        transition=dict(duration=500, easing="cubic-in-out"),
+        plot_bgcolor='rgba(0,0,0,0)',
+        paper_bgcolor='rgba(0,0,0,0)',
+        font=dict(color=BOOTSTRAP_COLORS['dark'])
     )
     return fig
 
@@ -631,16 +687,16 @@ def update_baths_rent_scatter_plot(pathname):
     baths = np.random.randint(1, 5, size=180) # 1 to 4 baths
     rent = 60000 + baths * 15000 + np.random.normal(0, 10000, size=180)
     rent[rent < 10000] = 10000
-    
+
     df_scatter = pd.DataFrame({'Baths': baths, 'Rent': rent})
 
     fig = go.Figure(data=[go.Scatter(
-        x=df_scatter['Baths'], 
-        y=df_scatter['Rent'], 
-        mode='markers', 
+        x=df_scatter['Baths'],
+        y=df_scatter['Rent'],
+        mode='markers',
         marker=dict(
-            color='#7FFFD4', # Aquamarine color
-            size=8,
+            color=BOOTSTRAP_COLORS['success'], # Using a success color from Cerulean
+            size=10,
             opacity=0.7,
             line=dict(width=1, color='DarkSlateGrey')
         ),
@@ -652,7 +708,11 @@ def update_baths_rent_scatter_plot(pathname):
         xaxis_title_text='Number of Baths',
         yaxis_title_text='Annual Rent (AED)',
         template="plotly_white",
-        margin=dict(l=40, r=20, t=40, b=20)
+        margin=dict(l=40, r=20, t=40, b=20),
+        transition=dict(duration=500, easing="cubic-in-out"),
+        plot_bgcolor='rgba(0,0,0,0)',
+        paper_bgcolor='rgba(0,0,0,0)',
+        font=dict(color=BOOTSTRAP_COLORS['dark'])
     )
     return fig
 
@@ -674,12 +734,12 @@ def update_rent_map_plot(pathname):
             lon=lons,
             mode="markers",
             marker=go.scattermapbox.Marker(
-                size=[r / 5000 for r in rents], # Scale marker size by rent for visibility
+                size=[r / 3000 for r in rents], # Scale marker size by rent for visibility, adjusted for better visualization
                 color=rents,
-                colorscale="Viridis",
+                colorscale="Plasma", # Changed to Plasma for a different feel
                 showscale=True,
-                colorbar=dict(title="Annual Rent (AED)"),
-                opacity=0.8
+                colorbar=dict(title="Annual Rent (AED)", thickness=15, title_font_color=BOOTSTRAP_COLORS['dark']), # Make colorbar more prominent
+                opacity=0.9
             ),
             text=[f"City: {city}<br>Estimated Rent: AED {rent:,.2f}" for city, rent in zip(cities, rents)],
             hoverinfo="text",
@@ -687,11 +747,13 @@ def update_rent_map_plot(pathname):
     )
 
     fig.update_layout(
-        mapbox_style="open-street-map", # You can try other styles like "carto-positron", "stamen-terrain"
+        mapbox_style="carto-positron", # A lighter, more modern map style
         mapbox_zoom=6,
         mapbox_center={"lat": 24.5, "lon": 55.0}, # Centered around UAE
         margin={"r":0,"t":40,"l":0,"b":0},
         title_text="Annual Rent Distribution Across UAE Cities (Sample Data)",
+        transition=dict(duration=500, easing="cubic-in-out"), # Smooth map transition
+        font=dict(color=BOOTSTRAP_COLORS['dark'])
     )
     return fig
 
@@ -718,7 +780,7 @@ def predict_api():
 
         if any(v is None for v in feature_values):
             return jsonify({"error": "Missing one or more required features"}), 400
-        
+
         X = preprocess_inputs(feature_values)
         pred_log = model.predict(X)[0]
         pred = np.expm1(pred_log)
@@ -743,9 +805,13 @@ def health():
         "encoder_loaded": ohe is not None
     })
 
-@server.route("/assets/<path:path>")
-def static_files(path):
-    return send_from_directory("assets", path)
+# No assets_folder is explicitly set in Dash app, so this route might not be needed
+# if you're not serving custom CSS or images directly.
+# If you decide to add custom CSS or images, you'll need to uncomment this
+# and set assets_folder in dash.Dash.
+# @server.route("/assets/<path:path>")
+# def static_files(path):
+#     return send_from_directory("assets", path)
 
 # -----------------------
 # Run app
@@ -756,7 +822,7 @@ if __name__ == "__main__":
     if not os.path.exists("src/scaler.pkl"):
         logger.warning("Scaler file 'src/scaler.pkl' not found.")
     if not os.path.exists("src/encoder.pkl"):
-        logger.warning("Encoder file 'src/encoder_new.pkl' not found.") # Corrected filename
-    
+        logger.warning("Encoder file 'src/encoder.pkl' not found.") # Corrected filename
+
     logger.info("Starting Flask + Dash Rent Prediction App...")
-    server.run(host="0.0.0.0", port=8000, debug=True)
+    server.run(host="0.0.0.0", port=8000, debug=True) # Set debug=True for development for auto-reloading
