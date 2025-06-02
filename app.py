@@ -2,18 +2,18 @@ import os
 import joblib
 import numpy as np
 import logging
-from flask import Flask, request, jsonify, send_from_directory, redirect
+from flask import Flask, request, jsonify, redirect
 import dash
 from dash import dcc, html, Input, Output, State
 import dash_bootstrap_components as dbc
 import plotly.graph_objects as go
 import pandas as pd
-import plotly.express as px # Import Plotly Express for easier qualitative plots
+import plotly.express as px
 
 # Setup logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
-
+df = pd.read_csv("cleaned_dubai_rental_data.csv")
 # -----------------------
 # Load model, scaler, and encoder
 # -----------------------
@@ -34,26 +34,19 @@ def load_model_preprocessors():
 model, scaler, ohe = load_model_preprocessors()
 
 # -----------------------
-# Flask app initialization
+# Flask & Dash Initialization
 # -----------------------
 server = Flask(__name__)
-
-# -----------------------
-# Dash app initialization
-# Using a different theme for a more professional look
-# -----------------------
 dash_app = dash.Dash(
     __name__,
     server=server,
     url_base_pathname="/dash/",
-    # Changed theme to CERULEAN and added Font Awesome for icons
     external_stylesheets=[dbc.themes.CERULEAN, dbc.icons.FONT_AWESOME],
-    # No 'assets_folder' needed if we aren't using custom CSS files or static assets directly for now
-    meta_tags=[{"name": "viewport", "content": "width=device-width, initial-scale=1.0"}] # Responsive meta tag
+    meta_tags=[{"name": "viewport", "content": "width=device-width, initial-scale=1.0"}]
 )
 
 # -----------------------
-# Feature configuration for the input fields
+# Feature config & mappings
 # -----------------------
 feature_config = {
     "Beds": {"min": 0, "max": 10, "default": 2, "icon": "fa-solid fa-bed"},
@@ -64,12 +57,7 @@ feature_config = {
     "City": {"min": 0, "max": 7, "default": 0, "icon": "fa-solid fa-city"}
 }
 
-# List of categorical features that will use dropdowns
 categorical_features = ["Type", "Furnishing", "City"]
-
-# -----------------------
-# Categorical mappings for dropdowns
-# -----------------------
 category_mappings = {
     "Type": {
         0: "Apartment", 1: "Penthouse", 2: "Villa", 3: "Townhouse", 4: "Villa Compound",
@@ -82,11 +70,6 @@ category_mappings = {
     },
 }
 
-# -----------------------
-# Geographical data for UAE cities (for map plot)
-# Note: These are approximate coordinates. Replace with your specific data if needed.
-# The 'predicted_rent' values are synthetic for demonstration purposes only.
-# -----------------------
 city_coordinates = {
     "Abu Dhabi": {"lat": 24.4667, "lon": 54.3667, "predicted_rent": 85000},
     "Dubai": {"lat": 25.2048, "lon": 55.2708, "predicted_rent": 120000},
@@ -98,347 +81,536 @@ city_coordinates = {
     "Umm Al Quwain": {"lat": 25.5533, "lon": 55.5475, "predicted_rent": 35000},
 }
 
+# -----------------------
+# Bootstrap colors for plots
+# -----------------------
+BOOTSTRAP_COLORS = {
+    'primary': '#007bff',
+    'secondary': '#6c757d',
+    'info': '#17a2b8',
+    'success': '#28a745',
+    'warning': '#ffc107',
+    'danger': '#dc3545',
+    'light': '#f8f9fa',
+    'dark': '#343a40'
+}
+# -----------------------
+# Navbar
+# -----------------------
+navbar = dbc.NavbarSimple(
+    children=[
+        dbc.NavItem(dbc.NavLink("Home", href="/dash/", active="exact")),
+        dbc.NavItem(dbc.NavLink("Predict", href="/dash/predict", active="exact")),
+        dbc.NavItem(dbc.NavLink("Data Insights", href="/dash/insights", active="exact")),
+        dbc.NavItem(dbc.NavLink("EDA", href="/dash/eda", active="exact")),
+    ],
+    brand="UAE Rent Guide",
+    brand_href="/dash/",
+    color="primary",
+    dark=True,
+    className="mb-4 shadow-sm rounded",  
+    fluid=True,
+    sticky="top",  
+    style={"fontWeight": "600", "letterSpacing": "1px"}  
+)
 
 # -----------------------
 # Helper functions to create input cards
 # -----------------------
 def create_input_card(name, config):
-    """
-    Creates a numeric input card with an icon.
-    """
     return dbc.Card(
         dbc.CardBody([
             html.Label(name, className="form-label mb-2 fw-bold"),
-            dbc.InputGroup(
-                [
-                    dbc.InputGroupText(html.I(className=config["icon"])),
-                    dbc.Input(
-                        id=name,
-                        type="number",
-                        min=config["min"],
-                        max=config["max"],
-                        step=config.get("step", 1),
-                        value=config["default"],
-                        placeholder=f"Enter {name}",
-                    )
-                ],
-                className="shadow-sm rounded-lg"
-            )
+            dbc.InputGroup([
+                dbc.InputGroupText(html.I(className=config["icon"])),
+                dbc.Input(
+                    id=name,
+                    type="number",
+                    min=config["min"],
+                    max=config["max"],
+                    step=config.get("step", 1),
+                    value=config["default"],
+                    placeholder=f"Enter {name}",
+                    style={"width": "100%"}  
+                )
+            ], className="shadow-sm rounded-lg")
         ]),
-        className="mb-3 border-0" # No border, use shadow from InputGroup
+        className="mb-3 border-0"
     )
 
 def create_dropdown_card(name, options_dict, default_idx, icon):
-    """
-    Creates a dropdown card with an icon.
-    """
     options = [{"label": label, "value": idx} for idx, label in options_dict.items()]
     return dbc.Card(
         dbc.CardBody([
             html.Label(name, className="form-label mb-2 fw-bold"),
-            dbc.InputGroup(
-                [
-                    dbc.InputGroupText(html.I(className=icon)),
-                    dcc.Dropdown(
-                        id=name,
-                        options=options,
-                        value=default_idx,
-                        clearable=False,
-                        searchable=True,
-                        className="form-select border-0" # Remove dropdown border, use input group border
-                    )
-                ],
-                className="shadow-sm rounded-lg"
-            )
+            dbc.InputGroup([
+                dbc.InputGroupText(html.I(className=icon)),
+                dcc.Dropdown(
+                    id=name,
+                    options=options,
+                    value=default_idx,
+                    clearable=False,
+                    searchable=True,
+                    className="form-select border-0",
+                    style={"width": "100%"}  
+                )
+            ], className="shadow-sm rounded-lg")
         ]),
         className="mb-3 border-0"
     )
 
 # -----------------------
-# Build Dash layout with Navbar, Sidebar, Inputs, and Plots
+# Build Pages
 # -----------------------
-def build_layout():
-    """
-    Constructs the main layout of the Dash application with a Navbar,
-    Offcanvas sidebar, prediction inputs, and data visualization plots.
-    """
+
+def build_home_page():
+    return dbc.Container([
+        html.Div(
+            style={"position": "relative", "marginBottom": "30px", "borderRadius": "8px", "overflow": "hidden"},
+            children=[
+                html.Img(
+                    src="https://www.sealra.com/media/images/banner.jpg",
+                    className="banner-image",
+                    style={
+                        "width": "100%",
+                        "height": "250px",
+                        "objectFit": "cover",
+                        "filter": "brightness(0.85)"
+                    }
+                ),
+                # Optional overlay text (commented out)
+                # html.Div(
+                #     "UAE Rent Predictor",
+                #     style={
+                #         "position": "absolute",
+                #         "top": "50%",
+                #         "left": "50%",
+                #         "transform": "translate(-50%, -50%)",
+                #         "color": "white",
+                #         "fontSize": "2.5rem",
+                #         "fontWeight": "bold",
+                #         "textShadow": "2px 2px 8px rgba(0,0,0,0.7)"
+                #     }
+                # )
+            ]
+        ),
+        html.H1("Rent Analytics Hub", className="text-center text-primary fw-bold mb-3"),
+        html.P("Choose an option below to get started.", className="text-center text-muted mb-5 fs-5"),
+        dbc.Row([
+            dbc.Col(
+                dbc.Card(
+                    dbc.CardBody([
+                        html.H4("🔍 Predict Rent", className="card-title text-primary fw-bold"),
+                        html.P("Input property features and get an estimated annual rent.", className="mb-3"),
+                        dbc.Button("Go to Prediction", href="/dash/predict", color="primary", className="mt-auto")
+                    ]),
+                    className="shadow-sm rounded h-100",
+                    style={"transition": "transform 0.3s", "cursor": "pointer"},
+                    id="card-predict"
+                ),
+                md=4
+            ),
+            dbc.Col(
+                dbc.Card(
+                    dbc.CardBody([
+                        html.H4("📊 Data Insights", className="card-title text-info fw-bold"),
+                        html.P("View distributions and relationships in the dataset.", className="mb-3"),
+                        dbc.Button("Explore Insights", href="/dash/insights", color="info", className="mt-auto")
+                    ]),
+                    className="shadow-sm rounded h-100",
+                    style={"transition": "transform 0.3s", "cursor": "pointer"},
+                    id="card-insights"
+                ),
+                md=4
+            ),
+            dbc.Col(
+                dbc.Card(
+                    dbc.CardBody([
+                        html.H4("📈 Exploratory Data Analysis", className="card-title text-success fw-bold"),
+                        html.P("Review the data exploration steps and findings.", className="mb-3"),
+                        dbc.Button("View EDA", href="/dash/eda", color="success", className="mt-auto")
+                    ]),
+                    className="shadow-sm rounded h-100",
+                    style={"transition": "transform 0.3s", "cursor": "pointer"},
+                    id="card-eda"
+                ),
+                md=4
+            )
+        ], className="g-4 justify-content-center")
+    ], className="pt-5 px-3")
+
+# Optional: Add Dash callbacks or CSS to add hover scale effect for cards:
+# e.g. in assets/style.css:
+# .card:hover {
+#     transform: scale(1.05);
+#     box-shadow: 0 0.5rem 1rem rgba(0,0,0,0.15);
+# }
+def build_prediction_page():
     prediction_inputs = []
     for name, cfg in feature_config.items():
         if name in categorical_features:
             prediction_inputs.append(create_dropdown_card(name, category_mappings[name], cfg["default"], cfg["icon"]))
         else:
             prediction_inputs.append(create_input_card(name, cfg))
-
     col1_inputs = prediction_inputs[0::2]
     col2_inputs = prediction_inputs[1::2]
 
-    # Navbar component
-    navbar = dbc.NavbarSimple(
+    return dbc.Container(
+        className="py-5",
         children=[
-            dbc.NavItem(dbc.NavLink("Home", href="/dash/")),
-            dbc.NavItem(dbc.NavLink("Predict", href="#prediction-section")),
-            dbc.NavItem(dbc.NavLink("Data Insights", href="#data-insights-section")),
-            dbc.Button(
-                html.I(className="fa-solid fa-bars"), # Hamburger icon for offcanvas toggle
-                id="open-offcanvas",
-                n_clicks=0,
-                className="ms-3 d-lg-none", # Show only on small screens
-                color="light"
+            # Banner Image with animation
+            html.Div(
+                html.Img(
+                    src="https://strapiallsopp.s3.eu-west-1.amazonaws.com/banner_1_114f7cb85f.jpg",
+                    className="banner-image",
+                    style={
+                        "width": "100%",
+                        "height": "280px",
+                        "objectFit": "cover",
+                        "borderRadius": "8px",
+                        "marginBottom": "30px",
+                        "filter": "brightness(0.85)"
+                    }
+                ),
+               className="fade-in"
             ),
-        ],
-        brand="UAE Rent Predictor",
-        brand_href="/dash/",
-        color="primary", # Primary color from theme
-        dark=True,
-        className="shadow-sm fixed-top", # Fixed at top, with shadow
-        fluid=True # Full width
-    )
 
-    # Offcanvas (sidebar) component
-    offcanvas = dbc.Offcanvas(
-        children=[
-            html.P("Quick Navigation", className="lead text-muted"),
-            dbc.Nav(
-                [
-                    dbc.NavLink("Home", href="/dash/", active="exact"),
-                    dbc.NavLink("Prediction", href="#prediction-section", active="exact"),
-                    dbc.NavLink("Data Insights", href="#data-insights-section", active="exact"),
-                ],
-                vertical=True,
-                pills=True, # Highlight active link
-            ),
-            html.Hr(className="my-3"),
-            html.Div([
-                html.P("About", className="mb-1"),
-                html.Small("Powered by Dash & Plotly", className="text-muted d-block"),
-                html.Small("Model Version 1.0", className="text-muted")
-            ], className="px-3")
-        ],
-        id="offcanvas",
-        title="Menu",
-        is_open=False,
-        placement="start", # From left
-        scrollable=True,
-        backdrop=True
-    )
-
-    return html.Div(
-        className="bg-light min-vh-100", # Light background, full height
-        children=[
-            dcc.Location(id="url", refresh=False),
-            navbar, # Add the navbar
-            offcanvas, # Add the offcanvas sidebar
-
-            # Main content area - using a container with top margin for navbar
-            dbc.Container(
-                className="py-5 mt-5", # Margin-top to clear the fixed navbar
-                children=[
-                    # Prediction Section
-                    html.Div(id="prediction-section", className="mb-5 pt-4"), # Anchor for prediction section
-                    dbc.Card(
-                        [
-                            dbc.CardHeader(html.H2("Predict Annual Rent", className="text-center text-primary mb-0")),
-                            dbc.CardBody([
-                                html.P("Enter the property details to get an estimated annual rent in AED.",
-                                       className="text-center text-muted mb-4"),
-                                dbc.Row(
-                                    className="g-4",
-                                    children=[
-                                        dbc.Col(col1_inputs, md=6),
-                                        dbc.Col(col2_inputs, md=6)
-                                    ]
-                                ),
-                                dbc.Row(
-                                    className="mt-4",
-                                    children=[
-                                        dbc.Col(
-                                            [
-                                                dbc.Button(
-                                                    [html.I(className="fa-solid fa-magnifying-glass me-2"), "Get Prediction"],
-                                                    id="predict-btn",
-                                                    color="primary",
-                                                    size="lg",
-                                                    className="d-block mx-auto mb-3 w-75"
-                                                ),
-                                                dcc.Loading( # Add loading component
-                                                    id="loading-output",
-                                                    type="circle",
-                                                    children=html.Div(
-                                                        id="prediction-output",
-                                                        className="text-center fs-4 fw-bold text-dark mt-3"
-                                                    )
-                                                )
-                                            ],
-                                            width=12,
-                                            className="d-flex flex-column align-items-center"
-                                        )
-                                    ]
-                                )
-                            ]),
-                            dbc.CardFooter(
-                                html.Small("Prediction results are estimates and may vary.", className="text-muted")
-                            )
-                        ],
-                        className="shadow-lg rounded-lg border-0" # More prominent card
+            dbc.Card([
+                dbc.CardHeader(
+                    html.H2("Predict Annual Rent", className="text-center text-primary mb-0 fw-bold")
+                ),
+                dbc.CardBody([
+                    html.P(
+                        "Enter the property details to get an estimated annual rent in AED.",
+                        className="text-center text-muted mb-4 fs-5"
                     ),
-
-                    # Data Visualization Section
-                    html.Div(id="data-insights-section", className="mt-5 pt-4"), # Anchor for data insights
-                    dbc.Card(
-                        [
-                            dbc.CardHeader(html.H2("Data Distribution Insights", className="text-center text-secondary mb-0")),
-                            dbc.CardBody([
-                                html.P("Explore the distributions and relationships within the dataset.",
-                                       className="text-center text-muted mb-4"),
-                                dbc.Row(
-                                    className="g-4",
-                                    children=[
-                                        dbc.Col(
-                                            dbc.Card(
-                                                dbc.CardBody([
-                                                    html.H5("Area Distribution (sqm)", className="card-title"),
-                                                    dcc.Graph(id='area-distribution-plot')
-                                                ]),
-                                                className="shadow-sm rounded-lg border-0"
-                                            ),
-                                            md=6
-                                        ),
-                                        dbc.Col(
-                                            dbc.Card(
-                                                dbc.CardBody([
-                                                    html.H5("Property Type Distribution", className="card-title"),
-                                                    dcc.Graph(id='type-distribution-plot')
-                                                ]),
-                                                className="shadow-sm rounded-lg border-0"
-                                            ),
-                                            md=6
-                                        )
-                                    ]
-                                ),
-                                dbc.Row(
-                                    className="g-4 mt-4", # Margin top for second row of plots
-                                    children=[
-                                        dbc.Col(
-                                            dbc.Card(
-                                                dbc.CardBody([
-                                                    html.H5("City Distribution", className="card-title"),
-                                                    dcc.Graph(id='city-distribution-plot')
-                                                ]),
-                                                className="shadow-sm rounded-lg border-0"
-                                            ),
-                                            md=6
-                                        ),
-                                        dbc.Col(
-                                            dbc.Card(
-                                                dbc.CardBody([
-                                                    html.H5("Rent Distribution by Property Type", className="card-title"),
-                                                    dcc.Graph(id='rent-by-type-violin-plot') # New plot
-                                                ]),
-                                                className="shadow-sm rounded-lg border-0"
-                                            ),
-                                            md=6
-                                        )
-                                    ]
-                                ),
-                                # New Row for additional plots
-                                dbc.Row(
-                                    className="g-4 mt-4",
-                                    children=[
-                                        dbc.Col(
-                                            dbc.Card(
-                                                dbc.CardBody([
-                                                    html.H5("Beds vs. Rent (Sample Data)", className="card-title"),
-                                                    dcc.Graph(id='beds-rent-scatter-plot')
-                                                ]),
-                                                className="shadow-sm rounded-lg border-0"
-                                            ),
-                                            md=6
-                                        ),
-                                        dbc.Col(
-                                            dbc.Card(
-                                                dbc.CardBody([
-                                                    html.H5("Baths vs. Rent (Sample Data)", className="card-title"),
-                                                    dcc.Graph(id='baths-rent-scatter-plot') # New plot
-                                                ]),
-                                                className="shadow-sm rounded-lg border-0"
-                                            ),
-                                            md=6
-                                        )
-                                    ]
-                                ),
-                                # New Row for Map Plot
-                                dbc.Row(
-                                    className="g-4 mt-4",
-                                    children=[
-                                        dbc.Col(
-                                            dbc.Card(
-                                                dbc.CardBody([
-                                                    html.H5("Annual Rent Across UAE Cities (Sample Data)", className="card-title"),
-                                                    dcc.Graph(id="rent-map-plot", style={"height": "500px"}) # Added map plot
-                                                ]),
-                                                className="shadow-sm rounded-lg border-0"
-                                            ),
-                                            width=12 # Map plot takes full width
-                                        )
-                                    ]
+                    dbc.Row(className="g-4", children=[
+                        dbc.Col(col1_inputs, md=6),
+                        dbc.Col(col2_inputs, md=6)
+                    ]),
+                    dbc.Row(className="mt-4", children=[
+                        dbc.Col([
+                            dbc.Button(
+                                [html.I(className="fa-solid fa-magnifying-glass me-2"), "Get Prediction"],
+                                id="predict-btn",
+                                color="primary",
+                                size="lg",
+                                className="d-block mx-auto mb-3 w-75 shadow"
+                            ),
+                            dcc.Loading(
+                                id="loading-output",
+                                type="circle",
+                                children=html.Div(
+                                    id="prediction-output",
+                                    className="text-center fs-4 fw-bold text-dark mt-3"
                                 )
-                            ]),
-                            dbc.CardFooter(
-                                html.Small("Plots are generated from sample data for demonstration.", className="text-muted")
                             )
-                        ],
-                        className="shadow-lg rounded-lg border-0" # More prominent card
-                    )
-                ]
-            )
+                        ], width=12, className="d-flex flex-column align-items-center")
+                    ])
+                ]),
+                dbc.CardFooter(
+                    html.Small("Prediction results are estimates and may vary.", className="text-muted fst-italic")
+                )
+            ], className="shadow-lg rounded-lg border-0")
         ]
     )
 
-# Assign the built layout to the Dash app
-dash_app.layout = build_layout()
+
+def build_insights_page():
+    return dbc.Container([
+        html.Div(
+            html.Img(
+                src="https://s3-eu-west-1.amazonaws.com/ebu-itweb-eurovision-prod/media_public/insights/0001/05/thumb_4185_insights_banner.jpeg",
+                className="banner-image",
+                style={
+                    "width": "100%",
+                    "height": "250px",
+                    "objectFit": "cover",
+                    "borderRadius": "12px",
+                    "marginBottom": "40px",
+                    "filter": "brightness(0.85)",
+                    "boxShadow": "0 4px 15px rgba(0,0,0,0.3)"
+                }
+            ),
+            className="fade-in"
+        ),
+        html.H2(
+            "Data Distribution Insights",
+            className="text-center",
+            style={
+                "color": "#007bff",
+                "fontWeight": "700",
+                "marginBottom": "40px",
+                "fontSize": "2.5rem",
+            }
+        ),
+
+        dbc.Row([
+            dbc.Col(
+                dbc.Card([
+                    dbc.CardBody([
+                  
+                        html.H5(
+                            "Area Distribution (sqm)",
+                            style={
+                                "color": "#004085",
+                                "fontWeight": "700",
+                                "marginBottom": "12px",
+                                "fontSize": "1.25rem"
+                            }
+                        ),
+                        dcc.Graph(id='area-distribution-plot')
+                    ])
+                ], className="shadow-sm rounded-lg border-0 mb-4"),
+                md=6
+            ),
+            dbc.Col(
+                dbc.Card([
+                    dbc.CardBody([
+                        html.H5(
+                            "Property Type Distribution",
+                            style={
+                                "color": "#004085",
+                                "fontWeight": "700",
+                                "marginBottom": "12px",
+                                "fontSize": "1.25rem"
+                            }
+                        ),
+                        dcc.Graph(id='type-distribution-plot')
+                    ])
+                ], className="shadow-sm rounded-lg border-0 mb-4"),
+                md=6
+            )
+        ]),
+
+        dbc.Row([
+            dbc.Col(
+                dbc.Card([
+                    dbc.CardBody([
+                        html.H5(
+                            "City Distribution",
+                            style={
+                                "color": "#004085",
+                                "fontWeight": "700",
+                                "marginBottom": "12px",
+                                "fontSize": "1.25rem"
+                            }
+                        ),
+                        dcc.Graph(id='city-distribution-plot')
+                    ])
+                ], className="shadow-sm rounded-lg border-0 mb-4"),
+                md=6
+            ),
+            dbc.Col(
+                dbc.Card([
+                    dbc.CardBody([
+                        html.H5(
+                            "Rent Distribution by Property Type",
+                            style={
+                                "color": "#004085",
+                                "fontWeight": "700",
+                                "marginBottom": "12px",
+                                "fontSize": "1.25rem"
+                            }
+                        ),
+                        dcc.Graph(id='rent-by-type-violin-plot')
+                    ])
+                ], className="shadow-sm rounded-lg border-0 mb-4"),
+                md=6
+            )
+        ]),
+
+        dbc.Row([
+            dbc.Col(
+                dbc.Card([
+                    dbc.CardBody([
+                        html.H5(
+                            "Beds vs. Rent (Sample Data)",
+                            style={
+                                "color": "#004085",
+                                "fontWeight": "700",
+                                "marginBottom": "12px",
+                                "fontSize": "1.25rem"
+                            }
+                        ),
+                        dcc.Graph(id='beds-rent-scatter-plot')
+                    ])
+                ], className="shadow-sm rounded-lg border-0 mb-4"),
+                md=6
+            ),
+            dbc.Col(
+                dbc.Card([
+                    dbc.CardBody([
+                        html.H5(
+                            "Baths vs. Rent (Sample Data)",
+                            style={
+                                "color": "#004085",
+                                "fontWeight": "700",
+                                "marginBottom": "12px",
+                                "fontSize": "1.25rem"
+                            }
+                        ),
+                        dcc.Graph(id='baths-rent-scatter-plot')
+                    ])
+                ], className="shadow-sm rounded-lg border-0 mb-4"),
+                md=6
+            )
+        ]),
+
+        dbc.Row([
+            dbc.Col(
+                dbc.Card([
+                    dbc.CardBody([
+                        html.H5(
+                            "Annual Rent Across UAE Cities (Sample Data)",
+                            style={
+                                "color": "#004085",
+                                "fontWeight": "700",
+                                "marginBottom": "12px",
+                                "fontSize": "1.25rem"
+                            }
+                        ),
+                        dcc.Graph(id="rent-map-plot", style={"height": "500px"})
+                    ])
+                ], className="shadow-sm rounded-lg border-0 mb-4"),
+                width=12
+            )
+        ])
+    ], className="pt-5 px-3")
+
+
+def build_eda_page():
+    sample_data = df.head(10)  
+
+    return dbc.Container([
+        html.Div(
+            html.Img(
+                src="https://www.fragomen.com/a/web/cQzR1LVbyYDVwAGqYp7TGi/8tDMMS/best-practices-for-maintaining-entities-in-the-uae-main-header.jpg",
+                className="banner-image",
+                style={
+                    "width": "100%",
+                    "height": "250px",
+                    "objectFit": "cover",
+                    "borderRadius": "8px",
+                    "marginBottom": "30px",
+                    "filter": "brightness(0.85)"
+                }
+            ),
+            className="fade-in"
+        ),
+        html.H2("🔎 Exploratory Data Analysis (EDA)", className="text-center my-4"),
+        dbc.Tabs([
+            dbc.Tab(label="About Dataset", tab_id="tab-about", children=[
+                dbc.Card([
+                    dbc.CardBody([
+                        html.P(
+                            "The dataset contains rental property listings from major UAE cities including Abu Dhabi, Dubai, Sharjah, Ajman, Ras Al Khaimah, Umm Al Quwain, and Al Ain. "
+                            "It includes 17 columns detailing features such as property type, rent amount, area size, furnishing status, and city location."
+                        ),
+                        html.P([
+                            "Source: ",
+                            html.A(
+                                "Kaggle Dataset - Real Estate Goldmine Dubai UAE Rental Market",
+                                href="https://www.kaggle.com/datasets/azharsaleem/real-estate-goldmine-dubai-uae-rental-market",
+                                target="_blank",
+                                style={"fontWeight": "bold"}
+                            )
+                        ]),
+                        html.H5("Sample Data Preview", className="mt-4"),
+                        dbc.Table.from_dataframe(sample_data, striped=True, bordered=True, hover=True, responsive=True),
+                    ])
+                ], className="mt-3")
+            ]),
+            dbc.Tab(label="EDA Steps", tab_id="tab-steps", children=[
+                dbc.Card([
+                    dbc.CardBody([
+                        html.H5("Steps Undertaken During EDA", className="mb-3"),
+                        html.Ul([
+                            html.Li("Data Cleaning: Handling missing values, removing duplicates, filtering outliers."),
+                            html.Li("Feature Engineering: Created new features such as rent per square foot."),
+                            html.Li("Encoding: Label encoding applied to categorical variables."),
+                            html.Li("Distribution Analysis: Examined key features like rent, area, property types."),
+                            html.Li("Correlation Analysis: Investigated relationships e.g. bedrooms vs rent."),
+                            html.Li("Geographical Insights: Compared rental prices across different UAE cities."),
+                            html.Li("Summarized findings to support rent prediction and market understanding."),
+                        ])
+                    ])
+                ], className="mt-3")
+            ]),
+            dbc.Tab(label="Key Findings", tab_id="tab-findings", children=[
+                dbc.Card([
+                    dbc.CardBody([
+                        html.H5("Key Insights", className="mb-3"),
+                        html.Ul([
+                            html.Li("Apartments and villas are the majority of listings."),
+                            html.Li("Dubai and Abu Dhabi lead the rental market in listings and prices."),
+                            html.Li("More bedrooms/bathrooms generally means higher rent."),
+                            html.Li("Rent per square foot varies significantly by property type and location."),
+                            html.Li("Insights help improve market understanding and rent predictions."),
+                        ])
+                    ])
+                ], className="mt-3")
+            ]),
+            dbc.Tab(label="Encoding Details", tab_id="tab-encoding", children=[
+                dbc.Card([
+                    dbc.CardBody([
+                        html.H5("Categorical Encoding Explanation", className="mb-3"),
+                        html.P(
+                            "Categorical columns were converted into numeric values using label encoding to prepare for modeling."
+                        ),
+                        html.P("Example mappings:"),
+                        html.Ul([
+                            html.Li("Type: Apartment=0, Penthouse=1, Villa=2, etc."),
+                            html.Li("Furnishing: Unfurnished=0, Furnished=1"),
+                            html.Li("City: Abu Dhabi=0, Ajman=1, Dubai=3, etc."),
+                        ]),
+                        html.P("This allows machine learning algorithms to interpret categorical data numerically.")
+                    ])
+                ], className="mt-3")
+            ]),
+            dbc.Tab(label="Resources", tab_id="tab-resources", children=[
+                dbc.Card([
+                    dbc.CardBody([
+                        html.H5("Additional Resources", className="mb-3"),
+                        html.Ul([
+                            html.Li(html.A("Kaggle Dataset", href="https://www.kaggle.com/datasets/azharsaleem/real-estate-goldmine-dubai-uae-rental-market", target="_blank")),
+                            html.Li(html.A("Scikit-Learn LabelEncoder", href="https://scikit-learn.org/stable/modules/generated/sklearn.preprocessing.LabelEncoder.html", target="_blank")),
+                            html.Li(html.A("Scikit-Learn OneHotEncoder", href="https://scikit-learn.org/stable/modules/generated/sklearn.preprocessing.OneHotEncoder.html", target="_blank")),
+                        ])
+                    ])
+                ], className="mt-3")
+            ]),
+        ], id="tabs", active_tab="tab-about"),
+    ], className="pt-4 px-3")
 
 # -----------------------
-# Callback to toggle offcanvas (sidebar)
+# Layout and Routing
 # -----------------------
+dash_app.layout = html.Div([
+    dcc.Location(id='url', refresh=False),
+    html.Div(id='page-content')
+])
+
 @dash_app.callback(
-    Output("offcanvas", "is_open"),
-    Input("open-offcanvas", "n_clicks"),
-    State("offcanvas", "is_open"),
+    Output('page-content', 'children'),
+    Input('url', 'pathname')
 )
-def toggle_offcanvas(n_clicks, is_open):
-    if n_clicks:
-        return not is_open
-    return is_open
+def display_page(pathname):
+    if pathname == "/dash/":
+        page_content = build_home_page()
+    elif pathname == "/dash/predict":
+        page_content = build_prediction_page()
+    elif pathname == "/dash/insights":
+        page_content = build_insights_page()
+    elif pathname == "/dash/eda":                
+        page_content = build_eda_page()
+    else:
+        page_content = html.Div("404 - Page not found", className="text-danger p-5 fs-3")
+    
+    return html.Div([navbar, page_content])
 
 # -----------------------
-# Preprocess input before prediction
-# -----------------------
-def preprocess_inputs(values):
-    """
-    Preprocesses the input values from the Dash form for model prediction.
-    Assumes values order: Beds, Baths, Area_in_sqm, Type, Furnishing, City.
-    Converts Area from square meters to square feet.
-    Splits, scales numeric, and one-hot encodes categorical features.
-    """
-    area_sqm = values[2]
-    area_sqft = area_sqm * 10.7639
-
-    numeric_vals = np.array([values[0], values[1], area_sqft]).reshape(1, -1)
-    cat_vals = np.array(values[3:]).reshape(1, -1)
-
-    # Check if scaler and ohe are loaded
-    if scaler is None or ohe is None:
-        raise ValueError("Scaler or OneHotEncoder not loaded for preprocessing.")
-
-    scaled_num = scaler.transform(numeric_vals)
-    encoded_cat = ohe.transform(cat_vals)
-
-    X = np.hstack([scaled_num, encoded_cat])
-    return X
-
-
-# -----------------------
-# Dash callback for prediction
+# Prediction callback
 # -----------------------
 @dash_app.callback(
     Output("prediction-output", "children"),
@@ -446,18 +618,12 @@ def preprocess_inputs(values):
     [State(name, "value") for name in feature_config.keys()]
 )
 def make_prediction(n_clicks, *values):
-    """
-    Callback function to handle the prediction when the button is clicked.
-    """
     if not n_clicks:
         return "Click 'Get Prediction' to get an estimate."
-
     if any(v is None for v in values):
         return dbc.Alert("Please fill in all fields to get a prediction.", color="warning", className="mt-3")
-
     if model is None or scaler is None or ohe is None:
         return dbc.Alert("Prediction model is not loaded. Please check server logs and ensure model files are in 'src' directory.", color="danger", className="mt-3")
-
     try:
         X = preprocess_inputs(values)
         pred_log = model.predict(X)[0]
@@ -471,29 +637,26 @@ def make_prediction(n_clicks, *values):
         return dbc.Alert(f"An error occurred during prediction: {str(e)}. Please check your inputs.", color="danger", className="mt-3")
 
 # -----------------------
+# Preprocess input before prediction
+# -----------------------
+def preprocess_inputs(values):
+    area_sqm = values[2]
+    area_sqft = area_sqm * 10.7639
+    numeric_vals = np.array([values[0], values[1], area_sqft]).reshape(1, -1)
+    cat_vals = np.array(values[3:]).reshape(1, -1)
+    if scaler is None or ohe is None:
+        raise ValueError("Scaler or OneHotEncoder not loaded for preprocessing.")
+    scaled_num = scaler.transform(numeric_vals)
+    encoded_cat = ohe.transform(cat_vals)
+    X = np.hstack([scaled_num, encoded_cat])
+    return X
+
+# -----------------------
 # Callbacks for Data Visualization Plots
 # -----------------------
-
-# Function to get colors from the chosen Bootstrap theme (CERULEAN)
-# Note: This is a simplified way to access colors. For a full list,
-# you'd inspect the actual CSS variables of the theme.
-# Common colors: 'primary', 'secondary', 'info', 'success', 'warning', 'danger', 'light', 'dark'
-BOOTSTRAP_COLORS = {
-    'primary': '#007bff', # Example for Cerulean Blue
-    'secondary': '#6c757d', # Example Grey
-    'info': '#17a2b8', # Example Cyan
-    'success': '#28a745', # Example Green
-    'warning': '#ffc107', # Example Yellow
-    'danger': '#dc3545', # Example Red
-    'light': '#f8f9fa',
-    'dark': '#343a40'
-}
-
-
-# Callback for Area Distribution Plot
 @dash_app.callback(
     Output('area-distribution-plot', 'figure'),
-    Input('url', 'pathname') # Trigger on page load
+    Input('url', 'pathname')
 )
 def update_area_distribution_plot(pathname):
     np.random.seed(42)
@@ -506,17 +669,15 @@ def update_area_distribution_plot(pathname):
         xaxis_title_text='Area (sqm)',
         yaxis_title_text='Count',
         bargap=0.05,
-        template="plotly_white", # Clean white background
+        template="plotly_white",
         margin=dict(l=40, r=20, t=40, b=20),
-        # Add smooth transition for updates
         transition=dict(duration=500, easing="cubic-in-out"),
-        plot_bgcolor='rgba(0,0,0,0)', # Transparent plot background
-        paper_bgcolor='rgba(0,0,0,0)', # Transparent paper background
-        font=dict(color=BOOTSTRAP_COLORS['dark']) # Text color from theme
+        plot_bgcolor='rgba(0,0,0,0)',
+        paper_bgcolor='rgba(0,0,0,0)',
+        font=dict(color=BOOTSTRAP_COLORS['dark'])
     )
     return fig
 
-# Callback for Property Type Distribution Plot
 @dash_app.callback(
     Output('type-distribution-plot', 'figure'),
     Input('url', 'pathname')
@@ -526,14 +687,13 @@ def update_type_distribution_plot(pathname):
     types_numeric = np.random.choice(list(category_mappings["Type"].keys()), size=300,
                                      p=[0.4, 0.1, 0.2, 0.1, 0.05, 0.05, 0.05, 0.025, 0.025])
     type_labels = [category_mappings["Type"][t] for t in types_numeric]
-    type_df = pd.DataFrame({'Type': type_labels}) # Create DataFrame for Plotly Express
+    type_df = pd.DataFrame({'Type': type_labels})
     type_counts = type_df['Type'].value_counts().reset_index()
     type_counts.columns = ['Type', 'Count']
 
-    # Use Plotly Express for a cleaner bar chart with automatic qualitative colors
     fig = px.bar(type_counts, x='Type', y='Count',
-                 color='Type', # Color by type for distinct bars
-                 color_discrete_sequence=px.colors.qualitative.Plotly # A good default qualitative palette
+                 color='Type',
+                 color_discrete_sequence=px.colors.qualitative.Plotly
                 )
     fig.update_layout(
         title_text='Distribution of Property Types',
@@ -541,7 +701,7 @@ def update_type_distribution_plot(pathname):
         yaxis_title_text='Count',
         template="plotly_white",
         margin=dict(l=40, r=20, t=40, b=20),
-        xaxis={'categoryorder':'total descending'}, # Order bars by count
+        xaxis={'categoryorder':'total descending'},
         transition=dict(duration=500, easing="cubic-in-out"),
         plot_bgcolor='rgba(0,0,0,0)',
         paper_bgcolor='rgba(0,0,0,0)',
@@ -549,7 +709,6 @@ def update_type_distribution_plot(pathname):
     )
     return fig
 
-# Callback for City Distribution Plot
 @dash_app.callback(
     Output('city-distribution-plot', 'figure'),
     Input('url', 'pathname')
@@ -564,8 +723,8 @@ def update_city_distribution_plot(pathname):
     city_counts.columns = ['City', 'Count']
 
     fig = px.bar(city_counts, x='City', y='Count',
-                 color='City', # Color by city for distinct bars
-                 color_discrete_sequence=px.colors.qualitative.Pastel # Another nice qualitative palette
+                 color='City',
+                 color_discrete_sequence=px.colors.qualitative.Pastel
                 )
     fig.update_layout(
         title_text='Distribution of Cities',
@@ -581,32 +740,26 @@ def update_city_distribution_plot(pathname):
     )
     return fig
 
-# New Plot: Rent Distribution by Property Type (Violin Plot)
 @dash_app.callback(
     Output('rent-by-type-violin-plot', 'figure'),
     Input('url', 'pathname')
 )
 def update_rent_by_type_violin_plot(pathname):
     np.random.seed(42)
-    # Generate synthetic data mimicking different rent distributions for property types
     data_for_violin = []
-    
-    # Define a color sequence for the violin plots to match the theme or be distinct
-    # Using a subset of Plotly's default qualitative colors or a custom list
-    violin_colors = px.colors.qualitative.D3 # A different qualitative palette
+    violin_colors = px.colors.qualitative.D3
 
     for i, (type_idx, type_label) in enumerate(category_mappings["Type"].items()):
-        # Simulate different rent ranges for different types
         if type_label == "Apartment":
             rent = np.random.normal(loc=100000, scale=30000, size=50)
         elif type_label == "Villa":
             rent = np.random.normal(loc=250000, scale=70000, size=20)
         elif type_label == "Penthouse":
             rent = np.random.normal(loc=350000, scale=80000, size=15)
-        else: # Other types
+        else:
             rent = np.random.normal(loc=70000, scale=20000, size=10)
 
-        rent[rent < 10000] = 10000 # Ensure rent is positive
+        rent[rent < 10000] = 10000
 
         data_for_violin.append(
             go.Violin(
@@ -615,8 +768,8 @@ def update_rent_by_type_violin_plot(pathname):
                 box_visible=True,
                 meanline_visible=True,
                 jitter=0.05,
-                scalemode='count', # violin width proportional to the number of points in that violin
-                line_color=violin_colors[i % len(violin_colors)], # Assign color from sequence
+                scalemode='count',
+                line_color=violin_colors[i % len(violin_colors)],
                 fillcolor=violin_colors[i % len(violin_colors)],
                 opacity=0.6
             )
@@ -637,15 +790,13 @@ def update_rent_by_type_violin_plot(pathname):
     )
     return fig
 
-
-# Callback for Beds vs. Rent Scatter Plot
 @dash_app.callback(
     Output('beds-rent-scatter-plot', 'figure'),
     Input('url', 'pathname')
 )
 def update_beds_rent_scatter_plot(pathname):
     np.random.seed(42)
-    beds = np.random.randint(1, 6, size=200) # 1 to 5 beds
+    beds = np.random.randint(1, 6, size=200)
     rent = 50000 + beds * 20000 + np.random.normal(0, 15000, size=200)
     rent[rent < 10000] = 10000
 
@@ -656,12 +807,12 @@ def update_beds_rent_scatter_plot(pathname):
         y=df_scatter['Rent'],
         mode='markers',
         marker=dict(
-            color=BOOTSTRAP_COLORS['info'], # Using an info color from Cerulean
-            size=10, # Slightly larger markers
+            color=BOOTSTRAP_COLORS['info'],
+            size=10,
             opacity=0.7,
             line=dict(width=1, color='DarkSlateGrey')
         ),
-        hoverinfo='text', # Show custom text on hover
+        hoverinfo='text',
         hovertext=[f'Beds: {b}<br>Rent: AED {r:,.2f}' for b, r in zip(df_scatter['Beds'], df_scatter['Rent'])]
     )])
     fig.update_layout(
@@ -677,14 +828,13 @@ def update_beds_rent_scatter_plot(pathname):
     )
     return fig
 
-# New Plot: Baths vs. Rent Scatter Plot
 @dash_app.callback(
     Output('baths-rent-scatter-plot', 'figure'),
     Input('url', 'pathname')
 )
 def update_baths_rent_scatter_plot(pathname):
     np.random.seed(42)
-    baths = np.random.randint(1, 5, size=180) # 1 to 4 baths
+    baths = np.random.randint(1, 5, size=180)
     rent = 60000 + baths * 15000 + np.random.normal(0, 10000, size=180)
     rent[rent < 10000] = 10000
 
@@ -695,7 +845,7 @@ def update_baths_rent_scatter_plot(pathname):
         y=df_scatter['Rent'],
         mode='markers',
         marker=dict(
-            color=BOOTSTRAP_COLORS['success'], # Using a success color from Cerulean
+            color=BOOTSTRAP_COLORS['success'],
             size=10,
             opacity=0.7,
             line=dict(width=1, color='DarkSlateGrey')
@@ -716,13 +866,11 @@ def update_baths_rent_scatter_plot(pathname):
     )
     return fig
 
-# New Callback for Rent Map Plot
 @dash_app.callback(
     Output('rent-map-plot', 'figure'),
-    Input('url', 'pathname') # Trigger on page load
+    Input('url', 'pathname')
 )
 def update_rent_map_plot(pathname):
-    # Prepare data for the map plot
     cities = list(city_coordinates.keys())
     lats = [city_coordinates[city]["lat"] for city in cities]
     lons = [city_coordinates[city]["lon"] for city in cities]
@@ -734,11 +882,11 @@ def update_rent_map_plot(pathname):
             lon=lons,
             mode="markers",
             marker=go.scattermapbox.Marker(
-                size=[r / 3000 for r in rents], # Scale marker size by rent for visibility, adjusted for better visualization
+                size=[r / 3000 for r in rents],
                 color=rents,
-                colorscale="Plasma", # Changed to Plasma for a different feel
+                colorscale="Plasma",
                 showscale=True,
-                colorbar=dict(title="Annual Rent (AED)", thickness=15, title_font_color=BOOTSTRAP_COLORS['dark']), # Make colorbar more prominent
+                colorbar=dict(title="Annual Rent (AED)", thickness=15, title_font_color=BOOTSTRAP_COLORS['dark']),
                 opacity=0.9
             ),
             text=[f"City: {city}<br>Estimated Rent: AED {rent:,.2f}" for city, rent in zip(cities, rents)],
@@ -747,16 +895,15 @@ def update_rent_map_plot(pathname):
     )
 
     fig.update_layout(
-        mapbox_style="carto-positron", # A lighter, more modern map style
+        mapbox_style="carto-positron",
         mapbox_zoom=6,
-        mapbox_center={"lat": 24.5, "lon": 55.0}, # Centered around UAE
+        mapbox_center={"lat": 24.5, "lon": 55.0},
         margin={"r":0,"t":40,"l":0,"b":0},
         title_text="Annual Rent Distribution Across UAE Cities (Sample Data)",
-        transition=dict(duration=500, easing="cubic-in-out"), # Smooth map transition
+        transition=dict(duration=500, easing="cubic-in-out"),
         font=dict(color=BOOTSTRAP_COLORS['dark'])
     )
     return fig
-
 
 # -----------------------
 # Flask API endpoint for prediction
@@ -767,20 +914,16 @@ def predict_api():
         return jsonify({"error": "Model or preprocessors not loaded"}), 503
     try:
         data = request.json
-        # The API expects raw feature values, then preprocess_inputs handles them
-        # Convert map values back to original feature names for preprocessing
         feature_values = [
             data.get("Beds"),
             data.get("Baths"),
             data.get("Area in square meters"),
-            data.get("Type"), # This will be the numeric index
-            data.get("Furnishing"), # This will be the numeric index
-            data.get("City") # This will be the numeric index
+            data.get("Type"),
+            data.get("Furnishing"),
+            data.get("City")
         ]
-
         if any(v is None for v in feature_values):
             return jsonify({"error": "Missing one or more required features"}), 400
-
         X = preprocess_inputs(feature_values)
         pred_log = model.predict(X)[0]
         pred = np.expm1(pred_log)
@@ -805,14 +948,6 @@ def health():
         "encoder_loaded": ohe is not None
     })
 
-# No assets_folder is explicitly set in Dash app, so this route might not be needed
-# if you're not serving custom CSS or images directly.
-# If you decide to add custom CSS or images, you'll need to uncomment this
-# and set assets_folder in dash.Dash.
-# @server.route("/assets/<path:path>")
-# def static_files(path):
-#     return send_from_directory("assets", path)
-
 # -----------------------
 # Run app
 # -----------------------
@@ -822,7 +957,7 @@ if __name__ == "__main__":
     if not os.path.exists("src/scaler.pkl"):
         logger.warning("Scaler file 'src/scaler.pkl' not found.")
     if not os.path.exists("src/encoder.pkl"):
-        logger.warning("Encoder file 'src/encoder.pkl' not found.") # Corrected filename
+        logger.warning("Encoder file 'src/encoder.pkl' not found.")
 
     logger.info("Starting Flask + Dash Rent Prediction App...")
-    server.run(host="0.0.0.0", port=8000, debug=True) # Set debug=True for development for auto-reloading
+    server.run(host="0.0.0.0", port=8000, debug=True)
