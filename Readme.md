@@ -1,12 +1,14 @@
 # UAE Rent Prediction Dashboard
+![68747470733a2f2f7777772e7365616c72612e636f6d2f6d656469612f696d616765732f62616e6e65722e6a7067](https://github.com/user-attachments/assets/71b33af7-5878-4290-a039-1255b44807bf)
 
-## 🚀 Project Overview
+
+## Project Overview
 
 This project provides an interactive web dashboard for predicting annual rent prices in the UAE, powered by a machine learning model. It leverages Flask for the backend API and Dash with Plotly for the interactive user interface, enhanced with `dash-bootstrap-components` for a professional look.
 
 The dashboard allows users to input various property features (like number of beds, baths, area, property type, furnishing, and city) and receive an instant estimated annual rent. Additionally, it offers data insights through visualizations of property distributions.
 
-## ✨ Features
+## Features
 
 * **Interactive Rent Prediction:** Get estimated annual rent based on user-defined property attributes.
 * **Machine Learning Backend:** Utilizes a pre-trained XGBoost model for predictions.
@@ -17,7 +19,7 @@ The dashboard allows users to input various property features (like number of be
 * **Input Icons:** Intuitive icons for input fields to enhance user experience.
 * **Loading Indicators:** Provides visual feedback during prediction processing.
 
-## 🛠️ Technologies Used
+## 🛠Technologies Used
 
 * **Python 3.x**
 * **Flask:** Web framework for the backend API.
@@ -30,7 +32,7 @@ The dashboard allows users to input various property features (like number of be
 * **Joblib:** For saving and loading machine learning models and preprocessors.
 * **XGBoost:** The machine learning algorithm used for rent prediction.
 
-## 📦 Installation & Setup
+##  Installation & Setup
 
 Follow these steps to get the project up and running on your local machine.
 
