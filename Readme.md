@@ -1,122 +1,129 @@
 # UAE Rent Prediction Dashboard
-![68747470733a2f2f7777772e7365616c72612e636f6d2f6d656469612f696d616765732f62616e6e65722e6a7067](https://github.com/user-attachments/assets/71b33af7-5878-4290-a039-1255b44807bf)
 
+![UAE Rent Prediction Banner](https://www.sealra.com/media/images/banner.jpg)
 
 ## Project Overview
+This project is a web-based interactive dashboard for predicting annual rental prices of properties in the UAE using machine learning. It provides data insights, exploratory data analysis (EDA), and an intuitive user interface for users to input property features and get estimated rent values.
 
-This project provides an interactive web dashboard for predicting annual rent prices in the UAE, powered by a machine learning model. It leverages Flask for the backend API and Dash with Plotly for the interactive user interface, enhanced with `dash-bootstrap-components` for a professional look.
+The application combines *Flask* and *Dash* frameworks with an XGBoost regression model trained on real rental data across major UAE cities.
 
-The dashboard allows users to input various property features (like number of beds, baths, area, property type, furnishing, and city) and receive an instant estimated annual rent. Additionally, it offers data insights through visualizations of property distributions.
+---
 
 ## Features
 
-* **Interactive Rent Prediction:** Get estimated annual rent based on user-defined property attributes.
-* **Machine Learning Backend:** Utilizes a pre-trained XGBoost model for predictions.
-* **Dynamic Data Visualizations:** Explore distributions of key features like property type, city, and area.
-* **Professional UI:** Built with `dash-bootstrap-components` for a clean, responsive, and modern design.
-* **API Endpoint:** A dedicated `/predict` API endpoint for programmatic access to the prediction model.
-* **Collapsible Navigation:** Features an `Offcanvas` sidebar for clean navigation on all screen sizes.
-* **Input Icons:** Intuitive icons for input fields to enhance user experience.
-* **Loading Indicators:** Provides visual feedback during prediction processing.
+- *Rent Prediction*: Input property features such as number of bedrooms, bathrooms, area, property type, furnishing status, and city to get a predicted annual rent.
+- *Data Insights*: Interactive plots showing distributions and relationships within the rental dataset.
+- *Exploratory Data Analysis (EDA)*: Detailed steps, findings, and dataset overview.
+- *REST API*: Endpoint for prediction to integrate with other systems or services.
 
-## 🛠Technologies Used
+---
 
-* **Python 3.x**
-* **Flask:** Web framework for the backend API.
-* **Dash:** Python framework for building analytical web applications.
-* **Dash Bootstrap Components (dbc):** For beautiful and responsive layouts.
-* **Plotly:** For creating interactive charts and visualizations.
-* **Pandas:** Data manipulation and analysis.
-* **NumPy:** Numerical operations.
-* **Scikit-learn:** For data preprocessing (StandardScaler, OneHotEncoder).
-* **Joblib:** For saving and loading machine learning models and preprocessors.
-* **XGBoost:** The machine learning algorithm used for rent prediction.
+## Dataset
 
-##  Installation & Setup
+- The data contains rental listings from major UAE cities including Abu Dhabi, Dubai, Sharjah, Ajman, Ras Al Khaimah, Umm Al Quwain, and Al Ain.
+- Features include property type, rent, area size, furnishing status, city, and more.
+- Original dataset source: [Kaggle - Real Estate Goldmine Dubai UAE Rental Market](https://www.kaggle.com/datasets/azharsaleem/real-estate-goldmine-dubai-uae-rental-market)
 
-Follow these steps to get the project up and running on your local machine.
+---
 
-### Prerequisites
+## Technologies & Libraries
 
-* Python 3.8+
-* `pip` (Python package installer)
+- Python 3.x
+- Flask (Web server)
+- Dash & Dash Bootstrap Components (Dashboard UI)
+- XGBoost (Machine Learning model)
+- Scikit-learn (Preprocessing & model pipeline)
+- Pandas & NumPy (Data handling)
+- Plotly (Interactive visualizations)
 
-### Steps
+---
+## Installation & Setup
 
-1.  **Clone the repository:**
-    ```bash
-    git clone [https://github.com/RRGrania/UAE-Rent-Prediction-Dashboard.git](https://github.com/RRGrania/UAE-Rent-Prediction-Dashboard.git)
-    cd UAE-Rent-Prediction-Dashboard
-    ```
+### Create and activate a virtual environment (optional but recommended):
 
-2.  **Create a virtual environment (recommended):**
-    ```bash
-    python -m venv venv
-    ```
+bash
+python -m venv .venv
+# Linux/Mac
+source .venv/bin/activate
+# Windows
+.venv\Scripts\activate
 
-3.  **Activate the virtual environment:**
-    * **On Windows:**
-        ```bash
-        .\venv\Scripts\activate
-        ```
-    * **On macOS/Linux:**
-        ```bash
-        source venv/bin/activate
-        ```
 
-4.  **Install project dependencies:**
-    ```bash
-    pip install -r requirements.txt
-    ```
-    (If `requirements.txt` doesn't exist, create it by running `pip freeze > requirements.txt` after installing all packages, or manually list them: `dash dash-bootstrap-components plotly pandas scikit-learn joblib Flask numpy`).
+## Install dependencies
 
-5.  **Obtain Machine Learning Models and Preprocessors:**
-    The application relies on three `.pkl` files for prediction:
-    * `xgb_rent_model_optimized.pkl` (the trained XGBoost model)
-    * `scaler.pkl` (the StandardScaler object)
-    * `encoder.pkl` (the OneHotEncoder object)
+bash
+pip install -r requirements.txt
 
-    **You need to place these three files inside a directory named `src` in your project root.**
-    Create the directory if it doesn't exist:
-    ```bash
-    mkdir src
-    ```
-    Then, move or copy your `.pkl` files into the `src` directory.
-    *(If you don't have these files, you'll need to train your model and save these objects first, or obtain them from the project maintainer.)*
 
-## 🚀 Usage
+## Ensure model and preprocessing files are in the src folder:
 
-### Running the Dashboard
+- xgb_rent_model_optimized.pkl
+- scaler.pkl
+- encoder.pkl
 
-Once all dependencies are installed and model files are in the `src` directory:
+## Run the app
 
-1.  **Start the Flask/Dash application:**
-    ```bash
-    python app.py
-    ```
-2.  **Access the Dashboard:**
-    Open your web browser and navigate to:
-    ```
-    [http://127.0.0.1:8000/dash/](http://127.0.0.1:8000/dash/)
-    ```
-    (Or `http://localhost:8000/dash/`)
+bash
+python app.py
 
-### Using the Prediction API
 
-You can also send POST requests to the `/predict` endpoint to get predictions programmatically.
+Open your browser at: http://localhost:8000/dash/
 
-**Endpoint:** `http://127.0.0.1:8000/predict`
-**Method:** `POST`
-**Content-Type:** `application/json`
+---
 
-**Example Request Body:**
+## Application Structure
 
-```json
+- *Home*: Welcome page with navigation cards.
+- *Predict*: Form inputs for rent prediction with live results.
+- *Data Insights*: Interactive visualizations of dataset distributions.
+- *EDA*: Detailed exploratory data analysis with dataset description, EDA steps, key findings, and encoding details.
+
+---
+
+## API Endpoint
+
+POST /predict
+
+### Request JSON example:
+
+json
 {
-    "Beds": 2,
-    "Baths": 2,
-    "Area in square meters": 100,
-    "Type": 0,       
-    "Furnishing": 1, 
-    "City": 3      
+  "Beds": 2,
+  "Baths": 2,
+  "Area in square meters": 75,
+  "Type": 0,
+  "Furnishing": 1,
+  "City": 3
 }
+
+### Response example:
+
+json
+{
+  "predicted_rent": 123456.78
+}
+
+## Additional Notes
+
+- Predictions are estimates and may vary based on the model and input data.
+- The project includes sample data visualizations generated using synthetic data reflecting UAE market trends.
+- The dashboard uses Bootstrap theming for a responsive and modern UI.
+
+---
+## Contact & Contributions
+
+Feel free to open issues or submit pull requests to improve the dashboard.
+
+---
+
+### Developed by Team ITI
+
+![Team ITI Logo](https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcQI6KFPp2QZ-rAUkI30ruT8CqgNR-wPHV9EqA&s)
+
+*Team Members:*
+
+
+- [*Rania*](https://github.com/RRGrania)
+- [*Rowaina*](https://github.com/Raoina) 
+- [*Mohy*](https://github.com/iDourgham)
+- [*Seif*](https://github.com/OPCoderman)
